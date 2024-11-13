@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use colors_transform::{Color, Hsl, Rgb};
 use png;
-use qoi_test::qoi_img::*;
+use qoi::qoi_lib::*;
 
 fn encode_checkerboard() {
     let mut pixels: Vec<Pixel> = Vec::with_capacity(64 * 64);
@@ -191,7 +191,7 @@ fn decode(args: &Vec<String>) -> io::Result<()> {
 
     reader.read_to_end(&mut bytes)?;
 
-    match qoi_test::qoi_img::decode(bytes) {
+    match qoi::qoi_lib::decode(bytes) {
         Ok(_img) => println!("Decoding successful!"),
         Err(err) => panic!("ERROR: {err:?}"),
     }
@@ -248,6 +248,9 @@ fn main() {
         }
         "bench" => {
             bench(&args);
+        }
+        "help" => {
+            println!("qoi supports the following commands: \n encode [IMAGE] (encodes given png-encoded into .qoi) \n decode [IMAGE] decodes given .qoi to .png \n bench [INPUT] [OUTPUT] encodes input .png into .qoi with encoding speed measured in microseconds.")
         }
         _ => {
             panic!("Invalid arguments!")

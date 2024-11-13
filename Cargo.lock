@@ -82,8 +82,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "qoi-test"
-version = "0.1.0"
+name = "qoi"
+version = "0.1.1"
 dependencies = [
  "array-init",
  "colors-transform",
