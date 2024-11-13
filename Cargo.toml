@@ -2,6 +2,17 @@
 name = "qoi"
 version = "0.1.1"
 edition = "2021"
+authors = ["nihil carcosa <nihil@valhrafnaz.gay>"]
+description = "CLI tool and rust library for the de- and encoding of images to the QOI format."
+readme = "README.md"
+homepage = "https://valhrafnaz.gay"
+repository = "https://git.valhrafnaz.gay/valhrafnaz/qoi-img"
+license-file = "LICENSE"
+keywords = ["image_compression", "encoding", "qoi", "cli", "library"]
+categories = ["command-line-utilities", "encoding", "graphics", "compression"]
+exlude = ["/qoi_test_images"]
+publish = false
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
