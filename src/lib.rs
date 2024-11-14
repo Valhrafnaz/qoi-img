@@ -1,14 +1,14 @@
 //! # qoi_img
 //! `qoi_img` is a bad, from-scratch implementation of the decoder and encoder for the `.qoi` file format as described as on [qoiformat.org](https://qoiformat.org/qoi-specification.pdf).
 //! This crate should not be published as better crates are available, e.g. [rapid-qoi](https://crates.io/crates/rapid-qoi).
-
 #![allow(dead_code, unused_variables)]
 pub mod qoi_lib {
 
     use log::{debug, info, Level, LevelFilter, Record, SetLoggerError};
     use std::fmt;
-    use std::fs::File;
+    use std::fs::*;
     use std::io::prelude::*;
+    
 
     use array_init;
 
@@ -60,7 +60,7 @@ pub mod qoi_lib {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # use crate::qoi_test::qoi_img::*;
+    /// # use crate::qoi::qoi_lib::*;
     /// # fn main() -> Result<(), Box<ImgError>> {
     /// init().expect("Failed to initialize logger");
     /// #
@@ -73,7 +73,7 @@ pub mod qoi_lib {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # use crate::qoi_test::qoi_img::*;
+    /// # use crate::qoi::qoi_lib::*;
     /// # fn main() -> Result<(), ImgError> {
     /// match init() {
     /// Ok(()) => (),
@@ -97,7 +97,7 @@ pub mod qoi_lib {
     /// Create a new image via constructor [`Image::new()`];
     /// ```rust
     /// # use std::error::Error;
-    /// # use crate::qoi_test::qoi_img::*;
+    /// # use crate::qoi::qoi_lib::*;
     /// # fn main() -> Result<(), Box<ImgError>> {
     ///
     /// let pixels: Vec<u8> = vec![0;1024*1024*4];
@@ -129,7 +129,13 @@ pub mod qoi_lib {
             channels: u8,
             colorspace: u8,
         ) -> Result<Image, ImgError> {
-            let pixels: Vec<Pixel> = match Image::pixels_from_bytes(data) {
+            let alpha: bool;
+            if channels == 4 {
+                alpha = true;
+            } else {
+                alpha = false;
+            }
+            let pixels: Vec<Pixel> = match Image::pixels_from_bytes(data, alpha) {
                 Ok(out) => out,
                 Err(error) => return Err(error),
             };
@@ -164,21 +170,39 @@ pub mod qoi_lib {
             img
         }
 
-        fn pixels_from_bytes(data: Vec<u8>) -> Result<Vec<Pixel>, ImgError> {
+        //Expects pixel data in order left to right, top to bottom, with values for rgba in sequential order
+        fn pixels_from_bytes(data: Vec<u8>, alpha: bool) -> Result<Vec<Pixel>, ImgError> {
             let mut pixels: Vec<Pixel> = Vec::with_capacity(data.len() / 4);
-            if data.len() % 4 == 0 {
-                for i in 0..data.len() / 4 {
-                    pixels.push(Pixel {
-                        r: data[i * 4],
-                        g: data[i * 4 + 1],
-                        b: data[i * 4 + 2],
-                        a: data[i * 4 + 3],
-                    });
+            if alpha {
+                if data.len() % 4 == 0 {
+                    for i in 0..data.len() / 4 {
+                        pixels.push(Pixel {
+                            r: data[i * 4],
+                            g: data[i * 4 + 1],
+                            b: data[i * 4 + 2],
+                            a: data[i * 4 + 3],
+                        });
+                    }
+                    Ok(pixels)
+                } else {
+                    Err(ImgError::DataError)
                 }
-                Ok(pixels)
             } else {
-                Err(ImgError::DataError)
+                if data.len() % 4 == 0 {
+                    for i in 0..data.len() / 3 {
+                        pixels.push(Pixel {
+                            r: data[i * 3],
+                            g: data[i * 3 + 1],
+                            b: data[i * 3 + 2],
+                            a: 255,
+                        });
+                    }
+                    Ok(pixels)
+                } else {
+                    Err(ImgError::DataError)
+                }
             }
+            
         }
     }
 
@@ -378,6 +402,7 @@ pub mod qoi_lib {
         (store % 64) as u8
     }
 
+    //Definitely broken in some way
     pub fn encode_from_image(img: Image) -> Vec<u8> {
         let mut prev_pixel: Pixel = Pixel {
             r: 0u8,
@@ -399,7 +424,7 @@ pub mod qoi_lib {
         }
 
         let mut encoded_bytes: Vec<u8> = Vec::new();
-        let mut run: u8 = 0;
+        let mut run: u64 = 0;
 
         let head = Header {
             magic: ['q', 'o', 'i', 'f'],
@@ -414,7 +439,7 @@ pub mod qoi_lib {
             encoded_bytes.push(i);
         }
 
-        let mut counter: u32 = 0;
+        let mut counter: u64 = 0;
 
         for pixel in img.pixels {
             counter += 1;
@@ -432,17 +457,20 @@ pub mod qoi_lib {
                             encoded_bytes.push(QOI_OP_RUN | (62 - RUN_BIAS));
                             run -= 62;
                         } else if run % 62 > 0 {
-                            encoded_bytes.push(QOI_OP_RUN | (run - RUN_BIAS));
+                            let run_remainder: u8 = run.try_into().unwrap();
+                            encoded_bytes.push(QOI_OP_RUN | (run_remainder - RUN_BIAS));
                             run = 0;
                         } else {
                             break;
                         }
                     }
                 } else {
-                    encoded_bytes.push(QOI_OP_RUN | (run - RUN_BIAS));
+                    let run8: u8 = run.try_into().unwrap();
+                    encoded_bytes.push(QOI_OP_RUN | (run8 - RUN_BIAS));
                     run = 0;
                 }
             }
+
 
             match chunk {
                 (ChunkType::Index, Some((index, irr1, irr2))) => {
@@ -509,14 +537,17 @@ pub mod qoi_lib {
                         encoded_bytes.push(QOI_OP_RUN | (62 - RUN_BIAS));
                         run -= 62;
                     } else if run % 62 > 0 {
-                        encoded_bytes.push(QOI_OP_RUN | (run - RUN_BIAS));
+                        let run_remainder: u8 = run.try_into().unwrap();
+                        encoded_bytes.push(QOI_OP_RUN | (run_remainder - RUN_BIAS));
                         run = 0;
                     } else {
                         break;
                     }
                 }
             } else {
-                encoded_bytes.push(QOI_OP_RUN | (run - RUN_BIAS));
+                let run8: u8 = run.try_into().unwrap();
+                encoded_bytes.push(QOI_OP_RUN | (run8 - RUN_BIAS));
+                // run = 0;
             }
         }
 
@@ -760,10 +791,13 @@ pub mod qoi_lib {
 
     #[cfg(test)]
     mod tests {
+
+        use png::ColorType;
+
         use super::*;
-        use std::fs::File;
         use std::io;
         use std::io::{BufReader, Read};
+        use std::path::*;
 
         #[test]
         fn diff_test() {
@@ -781,40 +815,131 @@ pub mod qoi_lib {
         }
 
         #[test]
-        fn encode_test() -> io::Result<()> {
-            let f: File = File::open("test.qoi")?;
-            let mut reader = BufReader::new(f);
-            let mut bytes: Vec<u8> = Vec::new();
+        fn qoi_to_qoi_test() -> io::Result<()> {
+            //Open path to test images
+            let path: &Path = Path::new("./qoi_test_images/");
+            let dir: ReadDir = match path.read_dir() {
+                Ok(d) => d,
+                Err(e) => panic!("Error reading path {e:?}"),
+            };
+            //Loop over files in directory, attempt to decode .qoi images and reencode 
+            for entry in dir {
 
-            reader.read_to_end(&mut bytes)?;
+                let file_path = match entry {
+                    Ok(d) => d.path(),
+                    Err(e) => panic!("Non-functional dir entry! \n {e:?}")
+                };
+                let file_path_str = match file_path.to_str() {
+                    Some(s) => s,
+                    None => ""
+                };
+                if !(file_path_str.contains(".qoi")) {
+                    continue;
+                }
+                
+                let file = match File::open(&file_path) {
+                    Ok(f) => f,
+                    Err(e) => panic!("Error reading file with path {:?}", file_path_str),
+                };
+                let mut reader = BufReader::new(file);
+                let mut bytes: Vec<u8> = Vec::new();
 
-            let out_img: super::Image;
+                reader.read_to_end(&mut bytes)?;
 
-            match super::decode(bytes) {
-                Ok(img) => out_img = img,
-                Err(err) => panic!("wallah geht nicht :/ {:?}", err),
+                let output_image: super::Image;
+                match super::decode(bytes) {
+                    Ok(img) => output_image = img,
+                    Err(err) => panic!("Image decode failed for {:?}" , file_path.to_str())
+                }
+                let mut name = match file_path.file_name() {
+                    Some(s) => match s.to_str() {
+                        Some(ss) => ss,
+                        None => panic!("File Name Error!")
+                    },
+                    None => panic!("File Name Error!"),
+                };
+                name = match name.strip_suffix(".qoi") {
+                    Some(n) => n,
+                    None => name,
+                };
+                write_to_file(encode_from_image(output_image), name).expect("Writing image failed!");
             }
-            write_to_file(encode_from_image(out_img), "test_dec").expect("wallahi!");
+            
             Ok(())
         }
 
         #[test]
-        fn decode_test() -> io::Result<()> {
-            let f: File = File::open("testcard_rgba.qoi")?;
-            let mut reader = BufReader::new(f);
-            let mut bytes: Vec<u8> = Vec::new();
+        fn png_to_qoi_test() -> io::Result<()> {
+            //Open path to test images
+            let path: &Path = Path::new("./qoi_test_images/");
+            let dir: ReadDir = match path.read_dir() {
+                Ok(d) => d,
+                Err(e) => panic!("Error reading path {e:?}"),
+            };
+            //Loop over files in directory, attempt to decode png and encode as qoi, compare to qoi
+            for entry in dir {
 
-            reader.read_to_end(&mut bytes)?;
+                let file_path = match entry {
+                    Ok(d) => d.path(),
+                    Err(e) => panic!("Non-functional dir entry! \n {e:?}")
+                };
+                let file_path_str = match file_path.to_str() {
+                    Some(s) => s,
+                    None => ""
+                };
+                if !(file_path_str.contains(".png")) {
+                    continue;
+                }
+                println!("{:}",file_path_str);
+                let file = match File::open(&file_path) {
+                    Ok(f) => f,
+                    Err(e) => panic!("Cannot read file! \n {e:?}")
+                };
+                let decoder = png::Decoder::new(file);
+                let mut reader = match decoder.read_info() {
+                    Ok(reader) => reader,
+                    Err(e) => panic!("ERROR: couldn't decode file: {e:}"),
+                };
+                //read image metadata
+                let width: u32 = reader.info().width;
+                let height: u32 = reader.info().height;
+                //for now: hardcoded to 4
+                let channels = match reader.info().color_type {
+                    ColorType::Rgb => 3,
+                    ColorType::Rgba => 4,
+                    _ => panic!("ERROR: Incompatible png file!")
+                };
 
-            let out_img: super::Image;
+                //create buffer matching the size of png-decoder output, writing size to output
+                let mut buf = vec![0; reader.output_buffer_size()];
+                let info = match reader.next_frame(&mut buf) {
+                    Ok(i) => i,
+                    Err(e) => panic!("ERROR: {e:?}"),
+                };
+                let bytes = &buf[..info.buffer_size()];
+                let byte_vec: Vec<u8> = bytes.to_vec();
 
-            match super::decode(bytes) {
-                Ok(img) => out_img = img,
-                Err(err) => panic!("Ja bruder war nicht so erfolgreich ahahahahahha {:?}", err),
+                //create bitmap data from raw byte vector
+                let img: Image = match Image::new(byte_vec, height, width, channels, 0) {
+                    Ok(image) => image,
+                    Err(err) => panic!("Problem generating image: {:?}", err),
+                };
+
+                let encoded_buffer = super::encode_from_image(img);
+                let mut name =  match file_path.file_name() {
+                    None => panic!("whoops!"),
+                    Some(n) => match n.to_str() {
+                        None => panic!("im shiddin"),
+                        Some(s) => s, 
+                    },
+                };
+                name = match name.strip_suffix(".png") {
+                    Some(n) => n,
+                    None => name,
+                };
+                write_to_file(encoded_buffer,name ).expect("Can't write resulting file!");
             }
-
-            write_to_file(encode_from_image(out_img), "testcard_new").expect("Boowomb!");
-
+            
             Ok(())
         }
 

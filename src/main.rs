@@ -82,35 +82,6 @@ fn encode_debug() {
 }
 
 fn demo() {
-    let decoder = png::Decoder::new(File::open("testcard_rgba.png").unwrap());
-    let mut reader = match decoder.read_info() {
-        Ok(reader) => reader,
-        Err(e) => panic!("ERROR: couldn't read file: {e:}"),
-    };
-    let mut buf = vec![0; reader.output_buffer_size()];
-
-    let info = match reader.next_frame(&mut buf) {
-        Ok(i) => i,
-        Err(e) => panic!("ERROR: {e:?}"),
-    };
-
-    let bytes = &buf[..info.buffer_size()];
-    let byte_vec: Vec<u8> = bytes.to_vec();
-
-    let img: Image = match Image::new(byte_vec, 256, 256, 4, 0) {
-        Ok(image) => image,
-        Err(err) => panic!("Problem generating imag: {:?}", err),
-    };
-    let start = SystemTime::now();
-    write_to_file(encode_from_image(img), "img").expect("Error writing file!");
-    let stop = match start.elapsed() {
-        Ok(elapsed) => elapsed.as_millis(),
-        Err(e) => {
-            println!("Error: {e:?}");
-            return ();
-        }
-    };
-    println!("Encode took: {} ms.", stop);
     let start = SystemTime::now();
     encode_checkerboard();
     let stop = match start.elapsed() {

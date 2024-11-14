@@ -1,2 +1,4 @@
 /target
 /qoi_test_images
+*.qoi
+*.png
