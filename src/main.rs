@@ -1,6 +1,6 @@
-use std::env;
+
+use clap::{Parser, Subcommand};
 use std::fs::File;
-use std::io;
 use std::io::{BufReader, Read};
 use std::time::SystemTime;
 
@@ -96,12 +96,10 @@ fn demo() {
 }
 
 //Attempts to encode given png image as second argument into qoi
-fn encode(args: &Vec<String>) {
-    //Path is fetched from arguments
-    let path = &args[2];
+fn encode(in_path: &str, out_path: &str) {
 
     //Init png decoder, attempt to decode png into bitmap, throw error if unsuccessful
-    let decoder = png::Decoder::new(File::open(path).unwrap());
+    let decoder = png::Decoder::new(File::open(in_path).unwrap());
     let mut reader = match decoder.read_info() {
         Ok(reader) => reader,
         Err(e) => panic!("ERROR: couldn't read file: {e:}"),
@@ -130,30 +128,13 @@ fn encode(args: &Vec<String>) {
         Err(err) => panic!("Problem generating image: {:?}", err),
     };
 
-    //encode generated bitmap
-    if args.len() >= 4 {
-        let filename: &String = &args[3];
-        write_to_file(encode_from_image(img), filename).expect("ERROR: Can't write file.");
-    } else {
-        let mut filename = path.clone();
-        for _i in 0..4 {
-            filename.pop();
-        }
-        write_to_file(encode_from_image(img), filename.as_str()).expect("ERROR: Can't write file.");
-    }
+    write_to_file(encode_from_image(img), out_path).expect("ERROR: Can't write file.");
     println!("Encoding successful!");
 }
 
-fn decode(args: &Vec<String>) -> io::Result<()> {
-    let mut path: String = String::new();
-    if args.len() > 2 {
-        path.push_str(args[2].as_str());
-    } else {
-        println!("ERROR: incorrect number of arguments! (specify file to decode!).");
-        ()
-    }
 
-    let f: File = match File::open(path.as_str()) {
+fn decode(path: &str) -> Result<Image, std::io::Error> {
+    let f: File = match File::open(path) {
         Ok(f) => f,
         Err(e) => panic!("ERROR: {e:?}"),
     };
@@ -163,68 +144,125 @@ fn decode(args: &Vec<String>) -> io::Result<()> {
     reader.read_to_end(&mut bytes)?;
 
     match qoi::qoi_lib::decode(bytes) {
-        Ok(_img) => println!("Decoding successful!"),
+        Ok(img) => {
+            println!("Decoding successful!");
+            return Ok(img);
+        },
         Err(err) => panic!("ERROR: {err:?}"),
     }
-    Ok(())
 }
 
-fn bench(args: &Vec<String>) {
-    if args.len() < 4 {
-        panic!("ERROR: invalid number of arguments!");
-    }
+fn bench(input: &str, output: Option<String>) {
+    
+    let start = SystemTime::now();
+    let out_path = match output {
+        Some(s) => s,
+        None => input.strip_suffix(".png").unwrap_or(input).to_owned()
+    };
 
-    let start = SystemTime::now();
-    encode(args);
+    encode(input, &out_path);
+
     match start.elapsed() {
-        Ok(elapsed) => println!("Encode took {} μs", elapsed.as_micros()),
+        Ok(elapsed) => {
+            if elapsed.as_millis() == 0 {
+                println!("Encode took {:?} μs to complete", elapsed.as_micros());
+            } else if elapsed.as_millis() > 999 {
+                println!("Encode took {:.3} s to complete", elapsed.as_secs_f32());
+            } else {
+                println!("Encode took {:?} ms to complete", elapsed.as_millis());
+            }
+        },
+        
         Err(e) => panic!("ERROR: {e:?}"),
     }
-    let mut new_arg: Vec<String> = Vec::new();
-    new_arg.push(String::from(""));
-    new_arg.push(String::from(""));
-    let mut to_push: String = args[3].clone();
-    to_push.push_str(".qoi");
-    new_arg.push(to_push);
     let start = SystemTime::now();
-    decode(&new_arg).expect(
-        "ERROR: Unspecified error during io-pipeline. Ensure file path is valid and can be read.",
-    );
+    let mut out_path: String = out_path.to_owned();
+    if !(out_path.contains(".qoi")) {
+        out_path.push_str(".qoi");
+    }
+    match decode(&out_path) {
+        Ok(img) => {
+            
+            let out_buf = img.pixels_to_bytes();
+            let _ = write_to_file(out_buf, out_path.strip_suffix(".qoi").unwrap()).expect("whoops!");
+        },
+        Err(e) => panic!("Error: {e:?}")
+    }
     match start.elapsed() {
-        Ok(elapsed) => println!("Decode took {} μs", elapsed.as_micros()),
+        Ok(elapsed) => {
+            if elapsed.as_millis() == 0 {
+                println!("Encode took {:?} μs to complete", elapsed.as_micros());
+            } else if elapsed.as_millis() > 999 {
+                println!("Encode took {:.3} s to complete", elapsed.as_secs_f32());
+            } else {
+                println!("Encode took {:?} ms to complete", elapsed.as_millis());
+            }
+        },
+        
         Err(e) => panic!("ERROR: {e:?}"),
+    }
+}
+
+#[derive(Parser)]
+#[command(name = "QOI Image Transcoder")]
+#[command(version, about, long_about = None)]
+#[command(next_line_help = true)] 
+struct Cli {
+    #[arg(short,long, action = clap::ArgAction::Count)]
+    verbose: Option<u8>,
+
+    #[command(subcommand)]
+    command: Commands
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Encode {
+        input: String,
+        output: Option<String>
+    },
+    Decode {
+        input: String,
+        out_fmt: String,
+        output: Option<String>
+    },
+    Bench {
+        input: String,
+        output: Option<String>
+    },
+    Demo {
     }
 }
 
 fn main() {
-    //Initialize logger
-    init().expect("Failed to initialize logger.");
+    let cli: Cli = Cli::parse();
 
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() == 1 {
-        panic!("ERROR: no arguments send!");
-    }
-
-    match args[1].as_str() {
-        "demo" => {
-            demo();
-        }
-        //can only handle pngs for now
-        "encode" => {
-            encode(&args);
-        }
-        "decode" => {
-            decode(&args).expect("ERROR: Unspecified error during io-pipeline. Ensure file path is valid and can be read.");
-        }
-        "bench" => {
-            bench(&args);
-        }
-        "help" => {
-            println!("qoi supports the following commands: \n encode [IMAGE] (encodes given png-encoded into .qoi) \n decode [IMAGE] decodes given .qoi to .png \n bench [INPUT] [OUTPUT] encodes input .png into .qoi with encoding speed measured in microseconds.")
-        }
-        _ => {
-            panic!("Invalid arguments!")
-        }
+    match &cli.command {
+        Commands::Bench { input, output } => {
+            bench(&input, output.clone());
+        },
+        Commands::Decode { input, out_fmt, output } => {
+            if out_fmt != "png" {
+                panic!("Unsupported output format!")
+            } else {
+                let img = match decode(&input) {
+                    Ok(i) => i,
+                    Err(e) => panic!("Error: {e:?}")
+                };
+                let out_path = match output {
+                    Some(s) => s,
+                    None => input 
+                };
+                let _ = write_to_file(img.pixels_to_bytes(), &out_path).expect("Error writing file!");
+            }
+        },
+        Commands::Encode { input, output } => {
+            let out_path = match output {
+                Some(s) => s,
+                None => input
+            };
+            encode(&input, &out_path);
+        },
+        Commands::Demo {  } => demo()
     }
 }

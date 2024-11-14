@@ -21,4 +21,4 @@ array-init = "2.0.1"
 png = "0.17.14"
 log = "0.4.22"
 colors-transform = "0.2.11"
-clap = "4.5.21"
+clap = { version = "4.5.18", features = ["derive"] }

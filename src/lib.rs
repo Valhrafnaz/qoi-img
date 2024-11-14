@@ -204,6 +204,16 @@ pub mod qoi_lib {
             }
             
         }
+        pub fn pixels_to_bytes(&self) -> Vec<u8> {
+            let mut buf: Vec<u8> = Vec::with_capacity(self.height as usize * self.width as usize * 4 as usize);
+            for pixel in &self.pixels {
+                buf.push(pixel.r);
+                buf.push(pixel.g);
+                buf.push(pixel.b);
+                buf.push(pixel.a);
+            }
+            return buf;
+        }
     }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -402,7 +412,6 @@ pub mod qoi_lib {
         (store % 64) as u8
     }
 
-    //Definitely broken in some way
     pub fn encode_from_image(img: Image) -> Vec<u8> {
         let mut prev_pixel: Pixel = Pixel {
             r: 0u8,
