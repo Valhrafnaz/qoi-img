@@ -8,6 +8,9 @@ pub mod qoi_lib {
     use std::fmt;
     use std::fs::*;
     use std::io::prelude::*;
+    use std::io::BufWriter;
+    use std::path::Path;
+    use png;
     
 
     use array_init;
@@ -40,7 +43,7 @@ pub mod qoi_lib {
     }
 
     //boilerplate implementation of the log crate
-    struct SimpleLogger;
+    pub struct SimpleLogger;
 
     impl log::Log for SimpleLogger {
         fn enabled(&self, metadata: &log::Metadata) -> bool {
@@ -84,8 +87,8 @@ pub mod qoi_lib {
     /// #
     /// # }
     /// ```
-    pub fn init() -> Result<(), SetLoggerError> {
-        log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
+    pub fn init(level: LevelFilter) -> Result<(), SetLoggerError> {
+        log::set_logger(&LOGGER).map(|()| log::set_max_level(level))
     }
 
     /// Custom image struct, which is used to store decoded data. Used by [encode_from_image] to encode the necessary data in bytes. Requires a Vector over [Pixel] values, `Vec<Pixel>`,
@@ -204,7 +207,7 @@ pub mod qoi_lib {
             }
             
         }
-        pub fn pixels_to_bytes(&self) -> Vec<u8> {
+        pub fn to_bytes(&self) -> Vec<u8> {
             let mut buf: Vec<u8> = Vec::with_capacity(self.height as usize * self.width as usize * 4 as usize);
             for pixel in &self.pixels {
                 buf.push(pixel.r);
@@ -213,6 +216,39 @@ pub mod qoi_lib {
                 buf.push(pixel.a);
             }
             return buf;
+        }
+        pub fn write_png(&self, path: &str) {
+            let mut file_path: String = String::new();
+            file_path.push_str(path);
+            if !path.contains(".png") {
+                file_path.push_str(".png");
+            }
+            let path = Path::new(&file_path);
+            let file = match File::create(path) {
+                Ok(f) => f,
+                Err(e) => panic!("ERROR during writing output file: {e:?}")
+            };
+            let buf: Vec<u8> = self.to_bytes();
+            let ref mut w = BufWriter::new(file);
+            let mut encoder = png::Encoder::new(w, self.width, self.height);
+
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+
+            encoder.set_source_gamma(png::ScaledFloat::new(1.0 / 2.2));     // 1.0 / 2.2, unscaled, but rounded
+            let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
+                (0.31270, 0.32900),
+                (0.64000, 0.33000),
+                (0.30000, 0.60000),
+                (0.15000, 0.06000)
+            );
+            encoder.set_source_chromaticities(source_chromaticities);
+            let mut writer = encoder.write_header().unwrap();
+            match writer.write_image_data(&buf) {
+                Ok(_a) => (),
+                Err(e) => panic!("Cannot write output file! {e:?}")
+            }
+            writer.finish().unwrap();
         }
     }
 
@@ -577,10 +613,20 @@ pub mod qoi_lib {
 
         encoded_bytes
     }
-
+    /// Writes Image as byte vector to file with name given as string slice.
+    /// ```rust
+    /// use qoi::qoi_lib::*
+    /// 
+    /// let img = Image::new();
+    /// let bytes: Vec<u8> = img.to_bytes();
+    /// let name = "qoi-image";
+    /// write_to_file(bytes, name);
+    /// ```
     pub fn write_to_file(bytes: Vec<u8>, filename: &str) -> std::io::Result<()> {
         let mut file_path: String = String::from(filename);
-        file_path.push_str(".qoi");
+        if !filename.contains(".qoi") {
+            file_path.push_str(".qoi");
+        }
 
         let mut buffer = File::create(file_path)?;
         let mut pos = 0;
@@ -806,11 +852,11 @@ pub mod qoi_lib {
         use super::*;
         use std::io;
         use std::io::{BufReader, Read};
-        use std::path::*;
 
         #[test]
         fn diff_test() {
-            init().expect("Logger initialisation failed!");
+            let level: LevelFilter = LevelFilter::Debug;
+            init(level).expect("Logger initialisation failed!");
             let pix1: Pixel = Pixel::new(0, 0, 0, 255);
             let pix2: Pixel = Pixel::new(255, 255, 255, 255);
 
@@ -899,7 +945,7 @@ pub mod qoi_lib {
                 if !(file_path_str.contains(".png")) {
                     continue;
                 }
-                println!("{:}",file_path_str);
+                debug!("{:}",file_path_str);
                 let file = match File::open(&file_path) {
                     Ok(f) => f,
                     Err(e) => panic!("Cannot read file! \n {e:?}")

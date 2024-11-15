@@ -1,5 +1,5 @@
 
-use clap::{Parser, Subcommand};
+use clap::{Args,Parser, Subcommand};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::time::SystemTime;
@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use colors_transform::{Color, Hsl, Rgb};
 use png;
 use qoi::qoi_lib::*;
+use log::{error,info};
 
 fn encode_checkerboard() {
     let mut pixels: Vec<Pixel> = Vec::with_capacity(64 * 64);
@@ -59,7 +60,7 @@ fn encode_debug() {
                     1 => img_data.push(rgb.get_green() as u8),
                     2 => img_data.push(rgb.get_blue() as u8),
                     3 => img_data.push(alpha as u8),
-                    _ => panic!("unrecoverable for-loop failure"),
+                    _ => error!("unrecoverable for-loop failure"),
                 }
             }
         }
@@ -73,11 +74,11 @@ fn encode_debug() {
     let stop = match start.elapsed() {
         Ok(elapsed) => elapsed.as_millis(),
         Err(e) => {
-            println!("Error: {e:?}");
+            error!("Error: {e:?}");
             return ();
         }
     };
-    println!("Encode took: {} ms.", stop);
+    info!("Encode took: {} ms.", stop);
     write_to_file(img_bytes, "test").expect("Error writing file!");
 }
 
@@ -87,7 +88,7 @@ fn demo() {
     let stop = match start.elapsed() {
         Ok(elapsed) => elapsed.as_millis(),
         Err(e) => {
-            println!("Error: {e:?}");
+            error!("Error: {e:?}");
             return ();
         }
     };
@@ -129,7 +130,7 @@ fn encode(in_path: &str, out_path: &str) {
     };
 
     write_to_file(encode_from_image(img), out_path).expect("ERROR: Can't write file.");
-    println!("Encoding successful!");
+    info!("Encoding successful!");
 }
 
 
@@ -145,7 +146,7 @@ fn decode(path: &str) -> Result<Image, std::io::Error> {
 
     match qoi::qoi_lib::decode(bytes) {
         Ok(img) => {
-            println!("Decoding successful!");
+            info!("Decoding successful!");
             return Ok(img);
         },
         Err(err) => panic!("ERROR: {err:?}"),
@@ -177,13 +178,13 @@ fn bench(input: &str, output: Option<String>) {
     }
     let start = SystemTime::now();
     let mut out_path: String = out_path.to_owned();
-    if !(out_path.contains(".qoi")) {
+    if !out_path.contains(".qoi") {
         out_path.push_str(".qoi");
     }
     match decode(&out_path) {
         Ok(img) => {
             
-            let out_buf = img.pixels_to_bytes();
+            let out_buf = img.to_bytes();
             let _ = write_to_file(out_buf, out_path.strip_suffix(".qoi").unwrap()).expect("whoops!");
         },
         Err(e) => panic!("Error: {e:?}")
@@ -208,6 +209,7 @@ fn bench(input: &str, output: Option<String>) {
 #[command(version, about, long_about = None)]
 #[command(next_line_help = true)] 
 struct Cli {
+    /// Specify log verbosity, respects multiple applications.
     #[arg(short,long, action = clap::ArgAction::Count)]
     verbose: Option<u8>,
 
@@ -217,51 +219,79 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Encode {
-        input: String,
-        output: Option<String>
-    },
-    Decode {
-        input: String,
-        out_fmt: String,
-        output: Option<String>
-    },
-    Bench {
-        input: String,
-        output: Option<String>
-    },
+    /// Encode given [IMAGE] from { png } to qoi. 
+    Encode(EncodeArgs),
+    /// Decode given qoi to specified [FORMAT].
+    Decode(DecodeArgs),
+    /// Benchmark en- and decoder by passing in [IMAGE] and optionally specifying [OUTPUT] file.
+    Bench(BenchArgs),
+    /// Demo the application.
     Demo {
     }
 }
 
+#[derive(Args)]
+struct BenchArgs {
+    /// File to be encoded.
+    #[arg(short,long)]
+    input: String,
+    /// Optional output path.
+    #[arg(short,long)]
+    output: Option<String>
+}
+
+#[derive(Args)]
+struct DecodeArgs {
+    /// Qoi file to be decoded
+    #[arg(short,long)]
+    input: String,
+    /// Format to transcode into
+    #[arg(short,long)]
+    format: String,
+    /// Optional file path
+    #[arg(short,long)]
+    output: Option<String>
+}
+
+#[derive(Args)]
+struct EncodeArgs {
+    // File to be encoded
+    #[arg(short,long)]
+    input: String,
+    // Optional output path
+    #[arg(short,long)]
+    output: Option<String>
+}
+
 fn main() {
     let cli: Cli = Cli::parse();
+    
 
     match &cli.command {
-        Commands::Bench { input, output } => {
-            bench(&input, output.clone());
+        Commands::Bench(args) => {
+            bench(&args.input, args.output.clone());
         },
-        Commands::Decode { input, out_fmt, output } => {
-            if out_fmt != "png" {
+        Commands::Decode(args)=> {
+            if args.format != "png" {
                 panic!("Unsupported output format!")
             } else {
-                let img = match decode(&input) {
+                let img = match decode(&args.input) {
                     Ok(i) => i,
                     Err(e) => panic!("Error: {e:?}")
                 };
-                let out_path = match output {
+                let out_path = match &args.output {
                     Some(s) => s,
-                    None => input 
+                    None => &args.input 
                 };
-                let _ = write_to_file(img.pixels_to_bytes(), &out_path).expect("Error writing file!");
+                img.write_png(&out_path);
             }
         },
-        Commands::Encode { input, output } => {
-            let out_path = match output {
+        Commands::Encode(args) => {
+            let out_path = match &args.output {
                 Some(s) => s,
-                None => input
+                None => &args.input
             };
-            encode(&input, &out_path);
+            encode(&args.input, &out_path);
         },
         Commands::Demo {  } => demo()
     }
