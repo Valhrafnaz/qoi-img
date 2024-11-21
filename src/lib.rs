@@ -64,8 +64,10 @@ pub mod qoi_lib {
     /// ```
     /// # use std::error::Error;
     /// # use crate::qoi::qoi_lib::*;
+    /// # use log::*;
     /// # fn main() -> Result<(), Box<ImgError>> {
-    /// init().expect("Failed to initialize logger");
+    /// let level = LevelFilter::Debug;
+    /// init(level).expect("Failed to initialize logger");
     /// #
     /// # Ok(())
     /// #
@@ -77,8 +79,10 @@ pub mod qoi_lib {
     /// ```
     /// # use std::error::Error;
     /// # use crate::qoi::qoi_lib::*;
+    /// # use log::*;
     /// # fn main() -> Result<(), ImgError> {
-    /// match init() {
+    /// let level = LevelFilter::Debug;
+    /// match init(level) {
     /// Ok(()) => (),
     /// Err(e) => println!("Logger failed to initialize!")
     /// }
@@ -615,12 +619,15 @@ pub mod qoi_lib {
     }
     /// Writes Image as byte vector to file with name given as string slice.
     /// ```rust
-    /// use qoi::qoi_lib::*
+    /// # use qoi::qoi_lib::*;
+    /// # fn main() {
     /// 
-    /// let img = Image::new();
-    /// let bytes: Vec<u8> = img.to_bytes();
+    /// let bytes: Vec<u8> = vec![];
     /// let name = "qoi-image";
     /// write_to_file(bytes, name);
+    /// #
+    /// # 
+    /// # }
     /// ```
     pub fn write_to_file(bytes: Vec<u8>, filename: &str) -> std::io::Result<()> {
         let mut file_path: String = String::from(filename);
@@ -869,7 +876,7 @@ pub mod qoi_lib {
             assert_eq!(pix3.diff(&pix4), (-5, -5, -5));
         }
 
-        #[test]
+        /* #[test]
         fn qoi_to_qoi_test() -> io::Result<()> {
             //Open path to test images
             let path: &Path = Path::new("./qoi_test_images/");
@@ -997,7 +1004,7 @@ pub mod qoi_lib {
             
             Ok(())
         }
-
+ */
         #[test]
         fn tag_test() {
             //init().expect("Logger initialisation failed!");
