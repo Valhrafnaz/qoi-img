@@ -2,6 +2,7 @@
 use clap::{Args,Parser, Subcommand};
 use std::fs::File;
 use std::io::{BufReader, Read};
+use std::process;
 use std::time::SystemTime;
 
 use colors_transform::{Color, Hsl, Rgb};
@@ -100,7 +101,11 @@ fn demo() {
 fn encode(in_path: &str, out_path: &str) {
 
     //Init png decoder, attempt to decode png into bitmap, throw error if unsuccessful
-    let decoder = png::Decoder::new(File::open(in_path).unwrap());
+    let file:File = File::open(in_path).unwrap_or_else(|e| {
+        println!("Error: {:?}", e.to_string());
+        process::exit(1);
+    });
+    let decoder = png::Decoder::new(file);
     let mut reader = match decoder.read_info() {
         Ok(reader) => reader,
         Err(e) => panic!("ERROR: couldn't read file: {e:}"),
@@ -129,7 +134,13 @@ fn encode(in_path: &str, out_path: &str) {
         Err(err) => panic!("Problem generating image: {:?}", err),
     };
 
-    write_to_file(encode_from_image(img), out_path).expect("ERROR: Can't write file.");
+    //in case out_path is erroneously passed with suffix
+    let filename = match out_path.strip_suffix(".png") {
+        Some(s) => s,
+        None => out_path
+    };
+
+    write_to_file(encode_from_image(img), filename).expect("ERROR: Can't write file.");
     info!("Encoding successful!");
 }
 
@@ -183,9 +194,9 @@ fn bench(input: &str, output: Option<String>) {
     }
     match decode(&out_path) {
         Ok(img) => {
-            
-            let out_buf = img.to_bytes();
-            let _ = write_to_file(out_buf, out_path.strip_suffix(".qoi").unwrap()).expect("whoops!");
+            //Never fails as long as memory does not corrupt thanks to above push_str op.
+            let png_path = out_path.strip_suffix(".qoi").unwrap();
+            img.write_png(&png_path);
         },
         Err(e) => panic!("Error: {e:?}")
     }
@@ -289,8 +300,12 @@ fn main() {
         Commands::Encode(args) => {
             let out_path = match &args.output {
                 Some(s) => s,
-                None => &args.input
+                None => args.input.strip_suffix(".png").unwrap_or_else(||{
+                    println!("Error: Could not construct output arg from input arg. Please provide explicitly");
+                    process::exit(1);
+                })
             };
+
             encode(&args.input, &out_path);
         },
         Commands::Demo {  } => demo()
